@@ -3,7 +3,7 @@
 A collection of Node.js-based simulators to evaluate Systematic Investment Plan (SIP) returns on the Nifty 50 Index using historical data. 
 
 The repository simulates and compares two main investment strategies:
-1. **Standard Monthly SIP (`index.js`)**: Invests capital on the first trading day of every month.
+1. **Standard Monthly SIP (`normal-sip.js`)**: Invests capital on the first trading day of every month.
 2. **God-Mode Perfect-Hindsight SIP (`god.js`)**: Holds monthly capital in a 6% savings account and only invests at the absolute future low points.
 
 ---
@@ -11,7 +11,7 @@ The repository simulates and compares two main investment strategies:
 ## 📈 Historical Performance Comparison
 Below is the comparison of both strategies simulated over a **30.5-year period (01/01/1996 to 01/07/2026)** using Nifty 50 historical data with daily **Low** prices.
 
-| Metric | Standard Monthly SIP (`index.js`) | God-Mode SIP (`god.js`) | Comparison / Difference |
+| Metric | Standard Monthly SIP (`normal-sip.js`) | God-Mode SIP (`god.js`) | Comparison / Difference |
 | :--- | :--- | :--- | :--- |
 | **Simulation Period** | 01/01/1996 to 01/07/2026 | 01/01/1996 to 01/07/2026 | 30.52 Years |
 | **Total Amount Invested** | ₹36,70,000 | ₹36,70,000 | Identical Capital Allocated |
@@ -26,7 +26,7 @@ Below is the comparison of both strategies simulated over a **30.5-year period (
 
 ## 🛠️ Investment Strategies Detailed
 
-### 1. Standard Monthly SIP (`index.js`)
+### 1. Standard Monthly SIP (`normal-sip.js`)
 The classic monthly investment approach:
 - Allocates a fixed monthly sum (default: ₹10,000) on the first trading day of each month.
 - Immediately purchases Nifty 50 index units at the daily reference price (Open, Close, or Low).
@@ -35,10 +35,10 @@ The classic monthly investment approach:
 #### Usage:
 ```bash
 # Run default simulation (₹10,000 monthly, 1996 to 2026)
-node index.js
+node normal-sip.js
 
 # Custom settings
-node index.js --amount 15000 --price open --start 2000-01-01 --end 2025-12-31
+node normal-sip.js --amount 15000 --price open --start 2000-01-01 --end 2025-12-31
 ```
 
 ### 2. God-Mode Perfect-Hindsight SIP (`god.js`)
@@ -66,7 +66,7 @@ node god.js --amount 20000 --price close --start 2010-01-01 -r monthly
 Both scripts support the following CLI flags:
 
 - `--amount, -a <number>`: Monthly investment amount in ₹ (default: `10000`)
-- `--price, -p <close|open|low>`: Index price reference to execute buys (default: `low` for `god.js`, `close` for `index.js`)
+- `--price, -p <close|open|low>`: Index price reference to execute buys (default: `low` for `god.js`, `close` for `normal-sip.js`)
 - `--start, -s <date>`: Date filter to start simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
 - `--end, -e <date>`: Date filter to end simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
 - `--report, -r <yearly|monthly>`: Report granularity (*only supported in `god.js`*)
