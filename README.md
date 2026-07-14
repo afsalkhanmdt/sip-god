@@ -1,152 +1,140 @@
-# NIFTY 50 SIP Simulator
+# Nifty 50 & Nifty 500 SIP Simulator
 
-A collection of Node.js-based simulators to evaluate Systematic Investment Plan (SIP) returns on the Nifty 50 Index using historical data. 
-
-The repository simulates and compares two main investment strategies:
-1. **Standard Monthly SIP (`normal-sip.js`)**: Invests capital on the first trading day of every month.
-2. **God-Mode Perfect-Hindsight SIP (`god.js`)**: Holds monthly capital in a 6% savings account and only invests at the absolute future low points.
+A collection of Node.js-based simulators and data tools to evaluate Systematic Investment Plan (SIP) returns on the Nifty 50 Index and individual Nifty 500 constituent stocks using historical daily daily candle data spanning up to **26 years (2000 to 2026)**.
 
 ---
 
-## 📈 Historical Performance Comparison
-Below is the comparison of both strategies simulated over a **30.5-year period (01/01/1996 to 01/07/2026)** using Nifty 50 historical data with daily **Low** prices.
+## 🏆 SIP Strategy Performance Leaderboard
 
-| Metric | Standard Monthly SIP (`normal-sip.js`) | God-Mode SIP (`god.js`) | Comparison / Difference |
-| :--- | :--- | :--- | :--- |
-| **Simulation Period** | 01/01/1996 to 01/07/2026 | 01/01/1996 to 01/07/2026 | 30.52 Years |
-| **Total Amount Invested** | ₹36,70,000 | ₹36,70,000 | Identical Capital Allocated |
-| **Savings Interest Earned** | ₹0 (No savings account) | ₹2,11,867 | **+₹2,11,867** |
-| **Final Portfolio Value** | ₹3,20,56,292 | **₹4,33,05,507** | **+₹1,12,49,215 (+35.1%)** |
-| **Total Nifty 50 Units Bought**| 1335.3534 units | **1803.9564 units** | **+468.60 units (+35.1%)** |
-| **Number of Buy Events** | 366 times (Monthly) | **71 times** | **80% fewer trades** |
-| **Absolute Return** | 773.47% | **1079.99%** | **+306.52% absolute return** |
-| **Annualized Return (XIRR)** | 11.90% | **13.37%** | **+1.47% CAGR** |
+Below are the backtesting results compiled across **422 active Nifty 500 stocks** comparing 7 distinct investment strategies. All models assume a monthly capital budget of **₹10,000** (or weekly equivalent of **₹2,500**), with idle cash held in savings compounding daily at **6.0% per annum**.
+
+| Rank | Strategy Name | Average XIRR | Average Portfolio Value | Average Outperformance vs. Benchmark |
+| :---: | :--- | :---: | :---: | :---: |
+| **#1** | **God-Mode SIP (Lifetime Hindsight)** | **22.66%** | ₹7,02,54,337 | **+6.21% CAGR** (+94.3% Portfolio Value) |
+| **#2** | **Monthly Low-Day SIP (Monthly Low)** | **17.39%** | ₹3,99,49,262 | **+0.94% CAGR** (+10.5% Portfolio Value) |
+| **#3** | **Standard Monthly SIP (1st Close)** | **16.45%** | ₹3,61,56,320 | **Benchmark** |
+| **#4** | **Mid-Month Monthly SIP (15th Close)** | **16.42%** | ₹3,57,29,529 | **-0.03% CAGR** (-1.2% Portfolio Value) |
+| **#5** | **Weekly SIP (Every 5 Days Close)** | **16.38%** | ₹3,60,57,650 | **-0.07% CAGR** (-0.3% Portfolio Value) |
+| **#6** | **10% Dip Strategy (250-day peak)** | **16.19%** | ₹3,40,85,564 | **-0.26% CAGR** (-5.7% Portfolio Value) |
+| **#7** | **200-Day SMA Buy-the-Dip** | **15.72%** | ₹3,13,94,400 | **-0.73% CAGR** (-13.2% Portfolio Value) |
 
 ---
 
-## 🛠️ Investment Strategies Detailed
+## 🔍 Key Financial Takeaways
+
+*   **Cash Drag beats Indicator-based Timing**: Interestingly, both the **200-Day SMA Buy-the-Dip** strategy (15.72% XIRR) and the **10% Dip Strategy** (16.19% XIRR) underperform the simple **Standard Monthly SIP** (16.45% XIRR). This is due to **cash drag**: when markets are in steady bull runs, money accumulates in savings earning only 6% while missing out on rapid equity compounding. By the time a dip is triggered, the stock price is often significantly higher than standard monthly DCA prices.
+*   **Day of Month Independence**: Moving the monthly investment date from the 1st of the month (16.45% XIRR) to the 15th (16.42% XIRR) results in a negligible difference, proving that long-term returns are independent of calendar days.
+*   **Frequency Independence**: Investing ₹2,500 weekly (16.38% XIRR) vs. ₹10,000 monthly (16.45% XIRR) yields nearly identical returns, showing that monthly allocations are completely sufficient.
+*   **The Monthly Timing Premium**: Perfecting timing within a calendar month (buying at the lowest low of the month) adds a **+0.94% CAGR** premium over standard monthly investments, adding **+₹38 Lakhs** to the average portfolio value.
+
+---
+
+## 🛠️ Simulator Files
+
+The project has three standalone simulator scripts located in the root directory:
 
 ### 1. Standard Monthly SIP (`normal-sip.js`)
-The classic monthly investment approach:
-- Allocates a fixed monthly sum (default: ₹10,000) on the first trading day of each month.
-- Immediately purchases Nifty 50 index units at the daily reference price (Open, Close, or Low).
-- Compounds purely through index growth.
-
-#### Usage:
+Invests a fixed monthly sum on the first trading day of each calendar month.
 ```bash
-# Run default simulation (₹10,000 monthly, 1996 to 2026)
+# Run default simulation on Nifty 50 index (1996 to 2026)
 node normal-sip.js
 
-# Custom settings
-node normal-sip.js --amount 15000 --price open --start 2000-01-01 --end 2025-12-31
+# Run simulation on a custom downloaded stock CSV
+node normal-sip.js --file historical-data/NSE_EQ_INE585B01010.csv
 ```
 
-### 2. God-Mode Perfect-Hindsight SIP (`god.js`)
-An optimal, perfect-hindsight strategy representing the absolute limit of buying the dip:
-- **Capital Accumulation**: A fixed monthly sum (default: ₹10,000) is allocated on the first trading day of the month into a savings cash account earning **6% per annum** (compounded daily).
-- **Absolute Future Low Buy**: The simulator pre-calculates the suffix minimums of index prices. A purchase is triggered on day $t$ *only* if the price $P(t)$ is less than or equal to all future prices $P(t') \ge P(t)$ in the remaining simulation period (meaning the market will never drop below this price again).
-- **Sweep Order**: On absolute future low days, all accumulated savings balance (including accrued interest) is swept to purchase Nifty 50 units.
-- **Liquidation Clear**: On the final day of the simulation, any leftover savings cash is automatically invested.
-
-#### Usage:
+### 2. God-Mode SIP (`god.js`)
+An optimal, perfect-hindsight strategy representing the absolute limit of buying the dip: accumulates cash in a 6% savings account and sweeps only on absolute lifetime future lows at the **Low** price.
 ```bash
 # Run default god simulation (defaults to yearly report)
 node god.js
 
-# Run monthly report breakdown showing the exact asset split (Nifty equity vs savings cash)
-node god.js --report monthly
+# Run simulation on a custom downloaded stock CSV
+node god.js --file historical-data/NSE_EQ_INE585B01010.csv
+```
 
-# Custom options
-node god.js --amount 20000 --price close --start 2010-01-01 -r monthly
+### 3. Percentage-Dip SIP (`dip-sip.js`)
+Accumulates monthly capital in a 6% savings account and triggers a buy whenever the close price drops by $X\%$ (default: 10%) from its rolling peak (default: 250 trading days).
+```bash
+# Run default 10% dip simulation on Nifty 50 index
+node dip-sip.js
+
+# Run 15% dip simulation on custom stock data with 500-day rolling window
+node dip-sip.js --file historical-data/NSE_EQ_INE585B01010.csv --dip 15 --window 500
 ```
 
 ---
 
-## 📊 Command Line Options
-Both scripts support the following CLI flags:
+## 📥 Historical Data Downloaders
 
-- `--amount, -a <number>`: Monthly investment amount in ₹ (default: `10000`)
-- `--price, -p <close|open|low>`: Index price reference to execute buys (default: `low` for `god.js`, `close` for `normal-sip.js`)
-- `--start, -s <date>`: Date filter to start simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
-- `--end, -e <date>`: Date filter to end simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
-- `--report, -r <yearly|monthly>`: Report granularity (*only supported in `god.js`*)
+Use these tools to compile historical daily candle datasets from Upstox:
+
+### 1. NSE Master Database Downloader
+Downloads and extracts the entire NSE equity and derivative instrument directory from Upstox (~86,000 contracts).
+```bash
+node scratch/download-nse-list.js
+```
+
+### 2. Single Stock Downloader
+Downloads up to 26+ years of daily candle data in 9-year chunks for any specific symbol/ISIN.
+```bash
+node download-historical.js --symbol NSE_EQ\|INF204KB14I2 --token "your_access_token"
+```
+
+### 3. Nifty 500 Bulk Downloader
+Downloads daily candle files for all active constituents of the Nifty 500 in parallel with retries, backoffs, and progression resume checks.
+```bash
+node download-all-historical.js --token "your_access_token" --nifty500
+```
 
 ---
 
-## 💾 Data Source
-The simulator parses historical index data from `nifty-data.csv` containing columns for `Date`, `Price` (Close), `Open`, `High`, and `Low`.
+## 📈 Analysis & Comparative Reports
+
+### Multi-Strategy Report Generator
+Runs all 7 investment models across all downloaded constituent stocks, compiling XIRR returns and final valuations.
+```bash
+# Generate report for all stocks matching the Nifty 500 constituents
+node generate-report.js
+```
+
+### Generated Outputs
+*   **Comparative Markdown Summary**: [reports/sip-multi-strategy-report.md](file:///Users/afsalkhan/Documents/poc/sip-god/reports/sip-multi-strategy-report.md)
+*   **Raw CSV Spreadsheet**: [reports/sip-multi-strategy-report.csv](file:///Users/afsalkhan/Documents/poc/sip-god/reports/sip-multi-strategy-report.csv)
 
 ---
 
-## 📋 God-Mode Console Output Example
-Running `node god.js` displays the following console performance report:
+## 📁 Repository Structure
 
 ```text
-Parsing nifty-data.csv...
-
-==========================================================================================
-                    NIFTY 50 GOD-MODE SIP PERFORMANCE REPORT
-==========================================================================================
-  Monthly Investment : ₹10,000
-  Interest Rate      : 6% per annum (on cash in savings)
-  Investment Rule    : Only invest when market is at an absolute future low
-  Price Reference    : LOW Price
-  Simulation Period  : 01/01/1996 to 01/07/2026 (30.52 years)
-==========================================================================================
-
-  SIP PERFORMANCE SUMMARY:
-  --------------------------------------------------------------------------------------
-  Total Amount Allocated     : ₹36,70,000
-  Total Savings Interest     : ₹2,11,867
-  Final Portfolio Value      : ₹4,33,05,507
-    - Value in Nifty 50 Units: ₹4,33,05,507
-    - Value in Savings Cash  : ₹0
-  Total Profit / Loss        : ₹3,96,35,507
-  Absolute Return            : 1079.99%
-  Annualized Return (XIRR)   : 13.37%
-  --------------------------------------------------------------------------------------
-  Total Nifty 50 Units Bought: 1803.9564 units
-  Number of Buy Events       : 71 times
-  Initial Nifty 50 Price     : ₹908.01 (01/01/1996)
-  Final Nifty 50 Price       : ₹24,005.85 (01/07/2026)
-  Index Absolute Growth      : 2543.79%
-  --------------------------------------------------------------------------------------
-
-  YEAR-BY-YEAR PERFORMANCE BREAKDOWN:
-  -------------------------------------------------------------------------------------------------------
-  Year  Invested (Yr)  Invested (Cum)  Nifty Val      Savings Bal    Portfolio Value   Abs. Return  XIRR
-  -------------------------------------------------------------------------------------------------------
-  1996  ₹1,20,000      ₹1,20,000       ₹1,43,110      ₹0             ₹1,43,110         +19.3%       +37.4%
-  1997  ₹1,20,000      ₹2,40,000       ₹1,71,809      ₹1,23,968      ₹2,95,777         +23.2%       +21.5%
-  1998  ₹1,20,000      ₹3,60,000       ₹4,21,620      ₹0             ₹4,21,620         +17.1%       +10.5%
-  1999  ₹1,20,000      ₹4,80,000       ₹7,05,894      ₹1,23,952      ₹8,29,846         +72.9%       +28.2%
-  2000  ₹1,20,000      ₹6,00,000       ₹6,02,474      ₹2,55,537      ₹8,58,011         +43.0%       +14.3%
-  2001  ₹1,20,000      ₹7,20,000       ₹9,64,377      ₹20,145        ₹9,84,522         +36.7%       +10.3%
-  2002  ₹1,20,000      ₹8,40,000       ₹9,95,747      ₹1,45,360      ₹11,41,108        +35.8%       +8.6%
-  2003  ₹1,20,000      ₹9,60,000       ₹21,84,259     ₹30,296        ₹22,14,555        +130.7%      +20.3%
-  2004  ₹1,20,000      ₹10,80,000      ₹26,27,402     ₹10,049        ₹26,37,451        +144.2%      +19.0%
-  2005  ₹1,20,000      ₹12,00,000      ₹36,99,423     ₹50,741        ₹37,50,164        +212.5%      +21.6%
-  2006  ₹1,20,000      ₹13,20,000      ₹51,72,971     ₹1,77,794      ₹53,50,765        +305.4%      +23.8%
-  2007  ₹1,20,000      ₹14,40,000      ₹80,05,950     ₹3,12,812      ₹83,18,762        +477.7%      +26.8%
-  2008  ₹1,20,000      ₹15,60,000      ₹44,37,849     ₹10,049        ₹44,47,898        +185.1%      +15.0%
-  2009  ₹1,20,000      ₹16,80,000      ₹79,53,749     ₹40,497        ₹79,94,246        +375.8%      +20.2%
-  2010  ₹1,20,000      ₹18,00,000      ₹93,81,235     ₹1,66,967      ₹95,48,202        +430.5%      +20.0%
-  2011  ₹1,20,000      ₹19,20,000      ₹73,78,645     ₹0             ₹73,78,645        +284.3%      +15.2%
-  2012  ₹1,20,000      ₹20,40,000      ₹95,46,450     ₹20,145        ₹95,66,595        +369.0%      +16.2%
-  2013  ₹1,20,000      ₹21,60,000      ₹1,03,40,759   ₹20,147        ₹1,03,60,906      +379.7%      +15.5%
-  2014  ₹1,20,000      ₹22,80,000      ₹1,36,81,178   ₹71,410        ₹1,37,52,588      +503.2%      +16.6%
-  2015  ₹1,20,000      ₹24,00,000      ₹1,31,25,603   ₹1,99,789      ₹1,33,25,392      +455.2%      +15.0%
-  2016  ₹1,20,000      ₹25,20,000      ₹1,37,98,885   ₹92,264        ₹1,38,91,149      +451.2%      +14.2%
-  2017  ₹1,20,000      ₹26,40,000      ₹1,77,51,706   ₹2,21,877      ₹1,79,73,583      +580.8%      +15.1%
-  2018  ₹1,20,000      ₹27,60,000      ₹1,83,11,109   ₹3,59,639      ₹1,86,70,748      +576.5%      +14.3%
-  2019  ₹1,20,000      ₹28,80,000      ₹2,05,12,478   ₹5,05,844      ₹2,10,18,322      +629.8%      +14.2%
-  2020  ₹1,20,000      ₹30,00,000      ₹2,47,03,019   ₹0             ₹2,47,03,019      +723.4%      +14.3%
-  2021  ₹1,20,000      ₹31,20,000      ₹3,07,23,451   ₹71,413        ₹3,07,94,864      +887.0%      +14.8%
-  2022  ₹1,20,000      ₹32,40,000      ₹3,22,47,079   ₹30,291        ₹3,22,77,370      +896.2%      +14.3%
-  2023  ₹1,20,000      ₹33,60,000      ₹3,88,89,416   ₹0             ₹3,88,89,416      +1057.4%     +14.5%
-  2024  ₹1,20,000      ₹34,80,000      ₹4,23,80,905   ₹61,055        ₹4,24,41,960      +1119.6%     +14.3%
-  2025  ₹1,20,000      ₹36,00,000      ₹4,69,57,676   ₹81,817        ₹4,70,39,494      +1206.7%     +14.1%
-  2026  ₹70,000        ₹36,70,000      ₹4,33,05,507   ₹0             ₹4,33,05,507      +1080.0%     +13.4%
-  -------------------------------------------------------------------------------------------------------
+sip-god/
+├── nifty-data.csv                # Nifty 50 index historical data (1996 - 2026)
+├── nse-instruments.json          # Master NSE instrument JSON database
+├── nse-instruments.csv           # Master NSE instrument CSV index
+├── normal-sip.js                 # Standard SIP Simulator
+├── god.js                        # God-Mode Hindsight Simulator
+├── dip-sip.js                    # Percentage-Dip Simulator
+├── download-historical.js        # Single Stock Downloader utility
+├── download-all-historical.js    # Bulk Stock Downloader utility
+├── generate-report.js            # Strategy Report Generator
+├── historical-data/              # Directory containing individual stock CSV datasets
+│   └── download-progress.json    # Tracking progress of bulk download runs
+├── reports/                      # Backtesting output reports folder
+│   ├── sip-multi-strategy-report.csv  # Comparative CSV results spreadsheet
+│   └── sip-multi-strategy-report.md   # Comparative Markdown rankings and takeaways
+└── scratch/                      # Workspace helper scratch scripts
+    ├── download-nse-list.js      # Script to download NSE master directory
+    └── search-instrument.js      # Utility to search symbols in master database
 ```
 
+---
+
+## 🛠️ CLI Flags (Common Options)
+Standalone simulator files support these standard command-line options:
+
+*   `-a, --amount <number>`: Monthly investment amount in ₹ (default: `10000`)
+*   `-p, --price <close|open|low>`: Reference daily price to execute purchases
+*   `-s, --start <date>`: Date filter to start simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
+*   `-e, --end <date>`: Date filter to end simulation in format `YYYY-MM-DD` or `DD/MM/YYYY`
+*   `-f, --file <path>`: Path to custom CSV index/stock data file
+*   `-r, --report <yearly|monthly>`: Report granularity (yearly or monthly detail table)

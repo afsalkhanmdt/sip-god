@@ -158,6 +158,7 @@ ${COLORS.bright}Options:${COLORS.reset}
   --start, -s <date>         Start date for simulation (DD/MM/YYYY or YYYY-MM-DD)
   --end, -e <date>           End date for simulation (DD/MM/YYYY or YYYY-MM-DD)
   --report, -r <yearly|monthly> Report breakdown type (default: yearly)
+  --file, -f <path>          Path to custom CSV index data file (default: nifty-data.csv)
   --help, -h                 Show this help screen
 `);
 }
@@ -197,6 +198,8 @@ function main() {
   let startDateLimit = new Date(1996, 0, 1);
   let endDateLimit = new Date(2026, 6, 30); // Jun 30, 2026
   let reportType = 'yearly';
+  let csvFile = 'nifty-data.csv';
+  let isDefaultFile = true;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -210,20 +213,23 @@ function main() {
       endDateLimit = parseCLIDate(args[++i]);
     } else if (arg === '--report' || arg === '-r') {
       reportType = args[++i].toLowerCase();
+    } else if (arg === '--file' || arg === '-f') {
+      csvFile = args[++i];
+      isDefaultFile = false;
     } else if (arg === '--help' || arg === '-h') {
       printHelp();
       return;
     }
   }
 
-  const csvPath = path.join(__dirname, 'nifty-data.csv');
+  const csvPath = isDefaultFile ? path.join(__dirname, csvFile) : path.resolve(csvFile);
   if (!fs.existsSync(csvPath)) {
-    console.error(`${COLORS.red}Error: nifty-data.csv file not found in the current directory!${COLORS.reset}`);
+    console.error(`${COLORS.red}Error: File not found at ${csvPath}!${COLORS.reset}`);
     process.exit(1);
   }
 
   // Load and Parse CSV
-  console.log(`${COLORS.gray}Parsing nifty-data.csv...${COLORS.reset}`);
+  console.log(`${COLORS.gray}Parsing ${path.basename(csvPath)}...${COLORS.reset}`);
   const csvContent = fs.readFileSync(csvPath, 'utf8');
   const lines = csvContent.split(/\r?\n/);
   const data = [];
