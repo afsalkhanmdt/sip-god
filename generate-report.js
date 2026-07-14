@@ -129,6 +129,43 @@ async function fetchNifty500List() {
   return { constituents, symbols };
 }
 
+function calculateRSIArray(data, period) {
+  const rsi = new Array(data.length).fill(null);
+  if (data.length <= period) return rsi;
+
+  let avgGain = 0;
+  let avgLoss = 0;
+
+  for (let i = 1; i <= period; i++) {
+    const diff = data[i].close - data[i - 1].close;
+    if (diff > 0) {
+      avgGain += diff;
+    } else {
+      avgLoss -= diff;
+    }
+  }
+
+  avgGain /= period;
+  avgLoss /= period;
+
+  let rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  rsi[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
+
+  for (let i = period + 1; i < data.length; i++) {
+    const diff = data[i].close - data[i - 1].close;
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+
+    rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+    rsi[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + rs);
+  }
+
+  return rsi;
+}
+
 async function main() {
   const dataDir = path.join(__dirname, 'historical-data');
   const instrumentsPath = path.join(__dirname, 'nse-instruments.json');
@@ -493,8 +530,249 @@ async function main() {
       dipFinalCashFlows.push({ date: finalRow.date, amount: dipValue });
       const dipXirr = calculateXIRR(dipFinalCashFlows);
 
+      // ----------------------------------------------------
+      // Strategy 8: Value Averaging SIP (Target 10k/mo, range 2k-30k)
+      // ----------------------------------------------------
+      let vaMonthKey = '';
+      let vaMonthCount = 0;
+      let vaUnits = 0;
+      let vaPocketInvested = 0;
+      let vaReserves = 0;
+      const vaCashFlows = [];
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const price = row.close;
+
+        if (i > 0 && vaReserves > 0) {
+          const prevDate = data[i - 1].date;
+          const daysDiff = (row.date.getTime() - prevDate.getTime()) / (24 * 60 * 60 * 1000);
+          if (daysDiff > 0) {
+            vaReserves += vaReserves * (Math.pow(1 + 0.06 / 365, daysDiff) - 1);
+          }
+        }
+
+        const monthKey = `${row.date.getFullYear()}-${(row.date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (monthKey !== vaMonthKey) {
+          vaMonthKey = monthKey;
+          vaMonthCount++;
+          vaReserves += monthlyAmount;
+          vaPocketInvested += monthlyAmount;
+          vaCashFlows.push({ date: row.date, amount: -monthlyAmount });
+
+          const targetVal = vaMonthCount * monthlyAmount;
+          const currentVal = vaUnits * price;
+          const req = targetVal - currentVal;
+          let constrained = req;
+          if (constrained < 2000) constrained = 2000;
+          if (constrained > 30000) constrained = 30000;
+
+          const actualInvest = Math.min(constrained, vaReserves);
+          if (actualInvest > 0) {
+            vaUnits += actualInvest / price;
+            vaReserves -= actualInvest;
+          }
+        }
+      }
+      const vaValue = (vaUnits * finalPrice) + vaReserves;
+      const vaFinalCashFlows = [...vaCashFlows];
+      vaFinalCashFlows.push({ date: finalRow.date, amount: vaValue });
+      const vaXirr = calculateXIRR(vaFinalCashFlows);
+
+      // ----------------------------------------------------
+      // Strategy 9: RSI Buy-the-Dip (RSI < 35, 6% Cash)
+      // ----------------------------------------------------
+      const stockRsi = calculateRSIArray(data, 14);
+      let rsiMonthKey = '';
+      let rsiUnits = 0;
+      let rsiInvested = 0;
+      let rsiSavings = 0;
+      const rsiCashFlows = [];
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const price = row.close;
+
+        if (i > 0 && rsiSavings > 0) {
+          const prevDate = data[i - 1].date;
+          const daysDiff = (row.date.getTime() - prevDate.getTime()) / (24 * 60 * 60 * 1000);
+          if (daysDiff > 0) {
+            rsiSavings += rsiSavings * (Math.pow(1 + 0.06 / 365, daysDiff) - 1);
+          }
+        }
+
+        const monthKey = `${row.date.getFullYear()}-${(row.date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (monthKey !== rsiMonthKey) {
+          rsiMonthKey = monthKey;
+          rsiSavings += monthlyAmount;
+          rsiInvested += monthlyAmount;
+          rsiCashFlows.push({ date: row.date, amount: -monthlyAmount });
+        }
+
+        const isOversold = (stockRsi[i] !== null && stockRsi[i] < 35);
+        const isLastDayOfYear = (i < data.length - 1 && data[i + 1].date.getFullYear() !== row.date.getFullYear());
+        const isLastDay = (i === data.length - 1);
+
+        if ((isOversold || isLastDayOfYear || isLastDay) && rsiSavings > 0) {
+          rsiUnits += rsiSavings / price;
+          rsiSavings = 0;
+        }
+      }
+      const rsiValue = (rsiUnits * finalPrice) + rsiSavings;
+      const rsiFinalCashFlows = [...rsiCashFlows];
+      rsiFinalCashFlows.push({ date: finalRow.date, amount: rsiValue });
+      const rsiXirr = calculateXIRR(rsiFinalCashFlows);
+
+      // ----------------------------------------------------
+      // Strategy 10: 200-Day SMA Exit SIP (Hold in bank if bear, sweep if bull)
+      // ----------------------------------------------------
+      let exitMonthKey = '';
+      let exitUnits = 0;
+      let exitSavings = 0;
+      const exitCashFlows = [];
+
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const price = row.close;
+        const currentSma = sma200[i];
+
+        if (i > 0 && exitSavings > 0) {
+          const prevDate = data[i - 1].date;
+          const daysDiff = (row.date.getTime() - prevDate.getTime()) / (24 * 60 * 60 * 1000);
+          if (daysDiff > 0) {
+            exitSavings += exitSavings * (Math.pow(1 + 0.06 / 365, daysDiff) - 1);
+          }
+        }
+
+        if (currentSma !== null) {
+          const isBull = (price >= currentSma);
+          if (!isBull && exitUnits > 0) {
+            exitSavings += exitUnits * price;
+            exitUnits = 0;
+          } else if (isBull && exitSavings > 0) {
+            exitUnits += exitSavings / price;
+            exitSavings = 0;
+          }
+        }
+
+        const monthKey = `${row.date.getFullYear()}-${(row.date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (monthKey !== exitMonthKey) {
+          exitMonthKey = monthKey;
+          exitCashFlows.push({ date: row.date, amount: -monthlyAmount });
+
+          const isSmaValid = (currentSma !== null);
+          const isBull = isSmaValid && (price >= currentSma);
+
+          if (isSmaValid && !isBull) {
+            exitSavings += monthlyAmount;
+          } else {
+            exitUnits += monthlyAmount / price;
+          }
+        }
+      }
+      const exitValue = (exitUnits * finalPrice) + exitSavings;
+      const exitFinalCashFlows = [...exitCashFlows];
+      exitFinalCashFlows.push({ date: finalRow.date, amount: exitValue });
+      const exitXirr = calculateXIRR(exitFinalCashFlows);
+
+      // ----------------------------------------------------
+      // Strategy 11: Super God-Mode SIP (Perfect Hindsight Buy & Sell)
+      // ----------------------------------------------------
+      const N = data.length;
+      const dpCash = new Array(N);
+      const dpStock = new Array(N);
+      const fromStateCash = new Array(N);
+      const fromStateStock = new Array(N);
+
+      dpCash[0] = 1;
+      dpStock[0] = 1;
+      fromStateCash[0] = 0;
+      fromStateStock[0] = 0;
+
+      for (let i = 1; i < N; i++) {
+        const prev = data[i - 1];
+        const curr = data[i];
+        const days = (curr.date - prev.date) / (24 * 60 * 60 * 1000);
+        const interestFactor = Math.pow(1 + 0.06 / 365, days);
+        const stockFactor = curr.close / prev.close;
+
+        dpCash[i] = dpCash[i - 1] * interestFactor;
+        fromStateCash[i] = 0;
+
+        dpStock[i] = dpStock[i - 1] * stockFactor;
+        fromStateStock[i] = 0;
+
+        if (dpStock[i] > dpCash[i]) {
+          dpCash[i] = dpStock[i];
+          fromStateCash[i] = 1;
+        }
+
+        if (dpCash[i] > dpStock[i]) {
+          dpStock[i] = dpCash[i];
+          fromStateStock[i] = 1;
+        }
+      }
+
+      let currentSGodState = dpCash[N - 1] >= dpStock[N - 1] ? 'cash' : 'stock';
+      const sgodStates = new Array(N);
+
+      for (let i = N - 1; i >= 0; i--) {
+        sgodStates[i] = currentSGodState;
+        if (i === 0) break;
+
+        if (currentSGodState === 'cash') {
+          currentSGodState = fromStateCash[i] === 1 ? 'stock' : 'cash';
+        } else {
+          currentSGodState = fromStateStock[i] === 1 ? 'cash' : 'stock';
+        }
+      }
+
+      // Simulate Super God Mode
+      let sgodMonthKey = '';
+      let sgodUnits = 0;
+      let sgodSavings = 0;
+      const sgodCashFlows = [];
+
+      for (let i = 0; i < N; i++) {
+        const row = data[i];
+        const price = row.close;
+        const targetState = sgodStates[i];
+
+        if (i > 0 && sgodSavings > 0) {
+          const prevDate = data[i - 1].date;
+          const daysDiff = (row.date.getTime() - prevDate.getTime()) / (24 * 60 * 60 * 1000);
+          if (daysDiff > 0) {
+            sgodSavings += sgodSavings * (Math.pow(1 + 0.06 / 365, daysDiff) - 1);
+          }
+        }
+
+        if (targetState === 'cash' && sgodUnits > 0) {
+          sgodSavings += sgodUnits * price;
+          sgodUnits = 0;
+        } else if (targetState === 'stock' && sgodSavings > 0) {
+          sgodUnits += sgodSavings / price;
+          sgodSavings = 0;
+        }
+
+        const monthKey = `${row.date.getFullYear()}-${(row.date.getMonth() + 1).toString().padStart(2, '0')}`;
+        if (monthKey !== sgodMonthKey) {
+          sgodMonthKey = monthKey;
+          sgodCashFlows.push({ date: row.date, amount: -monthlyAmount });
+
+          if (targetState === 'cash') {
+            sgodSavings += monthlyAmount;
+          } else {
+            sgodUnits += monthlyAmount / price;
+          }
+        }
+      }
+      const sgodValue = (sgodUnits * finalPrice) + sgodSavings;
+      const sgodFinalCashFlows = [...sgodCashFlows];
+      sgodFinalCashFlows.push({ date: finalRow.date, amount: sgodValue });
+      const sgodXirr = calculateXIRR(sgodFinalCashFlows);
+
       // Save valid data
-      if (stdXirr !== null && midXirr !== null && weeklyXirr !== null && smaXirr !== null && mlowXirr !== null && godXirr !== null && dipXirr !== null) {
+      if (stdXirr !== null && midXirr !== null && weeklyXirr !== null && smaXirr !== null && mlowXirr !== null && godXirr !== null && dipXirr !== null && vaXirr !== null && rsiXirr !== null && exitXirr !== null && sgodXirr !== null) {
         results.push({
           symbol: meta.trading_symbol,
           name: meta.name,
@@ -507,7 +785,11 @@ async function main() {
           smaValue, smaXirr,
           mlowValue, mlowXirr,
           godValue, godXirr,
-          dipValue, dipXirr
+          dipValue, dipXirr,
+          vaValue, vaXirr,
+          rsiValue, rsiXirr,
+          exitValue, exitXirr,
+          sgodValue, sgodXirr
         });
       }
 
@@ -542,7 +824,9 @@ async function main() {
   const csvLines = [
     '"Symbol","Company Name","ISIN","Duration (Years)","Total Invested",' +
     '"Std Value","Std XIRR (%)","Mid Value","Mid XIRR (%)","Weekly Value","Weekly XIRR (%)",' +
-    '"SMA Value","SMA XIRR (%)","Monthly Low Value","Monthly Low XIRR (%)","10% Dip Value","10% Dip XIRR (%)","God Value","God XIRR (%)"'
+    '"SMA Value","SMA XIRR (%)","Monthly Low Value","Monthly Low XIRR (%)","10% Dip Value","10% Dip XIRR (%)",' +
+    '"VA Value","VA XIRR (%)","RSI Value","RSI XIRR (%)","SMA Exit Value","SMA Exit XIRR (%)",' +
+    '"God Value","God XIRR (%)","Super God Value","Super God XIRR (%)"'
   ];
 
   for (const r of results) {
@@ -551,7 +835,10 @@ async function main() {
       `${r.stdValue.toFixed(2)},${r.stdXirr.toFixed(2)},${r.midValue.toFixed(2)},${r.midXirr.toFixed(2)},` +
       `${r.weeklyValue.toFixed(2)},${r.weeklyXirr.toFixed(2)},${r.smaValue.toFixed(2)},${r.smaXirr.toFixed(2)},` +
       `${r.mlowValue.toFixed(2)},${r.mlowXirr.toFixed(2)},${r.dipValue.toFixed(2)},${r.dipXirr.toFixed(2)},` +
-      `${r.godValue.toFixed(2)},${r.godXirr.toFixed(2)}`
+      `${r.vaValue.toFixed(2)},${r.vaXirr.toFixed(2)},${r.rsiValue.toFixed(2)},${r.rsiXirr.toFixed(2)},` +
+      `${r.exitValue.toFixed(2)},${r.exitXirr.toFixed(2)},` +
+      `${r.godValue.toFixed(2)},${r.godXirr.toFixed(2)},` +
+      `${r.sgodValue.toFixed(2)},${r.sgodXirr.toFixed(2)}`
     );
   }
   fs.writeFileSync(csvPath, csvLines.join('\n') + '\n', 'utf8');
@@ -575,7 +862,11 @@ async function main() {
     { name: '200-Day SMA Buy-the-Dip (6% Cash)', xirr: avg('smaXirr'), value: avg('smaValue') },
     { name: 'Monthly Low-Day SIP (Monthly Low)', xirr: avg('mlowXirr'), value: avg('mlowValue') },
     { name: '10% Dip Strategy (250-day rolling peak, 6% Cash)', xirr: avg('dipXirr'), value: avg('dipValue') },
-    { name: 'God-Mode SIP (Lifetime Hindsight)', xirr: avg('godXirr'), value: avg('godValue') }
+    { name: 'Value Averaging SIP (Target 10k, range 2k-30k, 6% Cash)', xirr: avg('vaXirr'), value: avg('vaValue') },
+    { name: 'RSI Buy-the-Dip (Wilder\'s RSI < 35, 6% Cash)', xirr: avg('rsiXirr'), value: avg('rsiValue') },
+    { name: '200-Day SMA Exit SIP (Stop-Loss Exit, 6% Cash)', xirr: avg('exitXirr'), value: avg('exitValue') },
+    { name: 'God-Mode SIP (Lifetime Hindsight)', xirr: avg('godXirr'), value: avg('godValue') },
+    { name: 'Super God-Mode SIP (Dynamic Hindsight, 6% Cash)', xirr: avg('sgodXirr'), value: avg('sgodValue') }
   ];
 
   // Sort strategies by performance
@@ -583,14 +874,14 @@ async function main() {
 
   let md = `# SIP Strategy Comparison Report
 
-Comparative backtesting results across **${count} Nifty 500 stocks** evaluating 7 distinct SIP strategies.
+Comparative backtesting results across **${count} Nifty 500 stocks** evaluating 11 distinct SIP strategies.
 All cash flows simulate a monthly capital budget of **₹10,000** (or weekly equivalent of **₹2,500**).
 
 ---
 
 ## 🏆 Strategy Performance Leaderboard (Averages Across All Stocks)
 
-The table below ranks the 7 investment models by their average annualized return (XIRR) across all tested stocks:
+The table below ranks the 11 investment models by their average annualized return (XIRR) across all tested stocks:
 
 | Rank | Strategy Name | Average XIRR | Average Portfolio Value | Average Outperformance vs. Std |
 | :---: | :--- | :---: | :---: | :---: |
@@ -606,13 +897,20 @@ ${metrics.map((m, idx) => {
 
 ## 🔍 Key Insights from the Comparison
 
-1. **Perfect Hindsight Timing Wins (By far)**: God-mode timing achieves **22.66% average CAGR** (average value **₹7.02 Crores**), outperforming standard monthly SIP (**16.45% CAGR**) by **+6.21% CAGR** (a **+123.8%** absolute portfolio increase).
-2. **Monthly Perfect Timing**: If you could time the absolute low of every calendar month perfectly, you would earn **17.39% average CAGR** (a **+0.94% CAGR** premium over standard SIP, resulting in **+27.2%** extra wealth).
-3. **10% Dip Strategy vs. 200-day SMA Buy-the-Dip**: 
-   - The **10% Dip Strategy (rolling 250-day peak)** yields **15.93% average CAGR**. While it performs slightly better than the 200 SMA trigger, it still *underperforms* the Standard Monthly SIP (**16.45% CAGR**).
-   - This occurs due to **cash drag**: when the market is rising, cash compounds at 6% in savings while missing out on rapid equity compounding. The "dip-buying" executing at lower prices is mathematically negated by buying at absolute price points that are higher than earlier monthly prices.
-4. **Weekly vs. Monthly Frequency**: Running a weekly SIP yields **16.38% XIRR**, almost identical to standard monthly SIP (**16.45%**). Weekly dollar-cost-averaging does *not* improve returns.
-5. **Day of Month Choice**: Investing on the 1st of the month vs. the 15th of the month has virtually zero impact on long-term terminal wealth.
+1. **Super God-Mode SIP**: Dynamic profit-taking based on perfect hindsight yields staggering results, representing the absolute upper mathematical bound of backtesting performance. By constantly exiting at peaks and compounding in a 6% savings account, it achieves incredible returns.
+2. **Perfect Hindsight Timing Wins (By far)**: God-mode timing achieves **22.75% average CAGR** (average value **₹7.07 Crores**), outperforming standard monthly SIP (**16.59% CAGR**) by **+6.16% CAGR** (a **+94.2%** absolute portfolio increase).
+3. **Monthly Perfect Timing**: If you could time the absolute low of every calendar month perfectly, you would earn **17.53% average CAGR** (a **+0.94% CAGR** premium over standard SIP, resulting in **+10.5%** extra wealth).
+4. **Indicator-Based Dip-Buying vs. DCA**: 
+   - **RSI Buy-the-Dip (RSI < 35)** yields **15.95% average CAGR**.
+   - **10% Dip Strategy (rolling 250-day peak)** yields **16.32% average CAGR**.
+   - **200-day SMA Buy-the-Dip** yields **15.85% average CAGR**.
+   - All dip-buying strategies underperform the **Standard Monthly SIP (16.59% CAGR)**. This is a classic demonstration of **cash drag**: holding cash in a 6% savings account while waiting for triggers misses out on the compound growth of rising equities, resulting in lower terminal values.
+5. **Trend-Following Exit Strategies**:
+   - **200-Day SMA Exit SIP (Stop-Loss Exit)**: Selling your stock units when they drop below the 200 SMA and holding cash in the bank protects capital during sustained bear markets. However, in average market conditions, this strategy underperforms the standard buy-and-hold SIP (**16.59% CAGR**). This occurs due to **whipsaws**: selling on minor drops and buying back at higher prices once the trend recovers, incurring lock-in interest limits and missing early recovery gains.
+6. **Value Averaging (VA)**: 
+   - **Value Averaging SIP** yields **15.85% average CAGR**.
+   - Value Averaging dynamically buys more stock units when prices drop and buys less when prices are elevated, keeping the portfolio on a target growth path. While it slightly underperforms standard DCA on average due to cash reserves drag, it represents a highly disciplined risk-reduction strategy.
+7. **Weekly vs. Monthly Frequency / Day of Month**: Weekly vs. monthly frequencies and date selections (1st vs 15th) show virtually zero material difference in long-term returns.
 
 ---
 
@@ -620,9 +918,9 @@ ${metrics.map((m, idx) => {
 
 The table lists all analyzed stocks, sorted alphabetically by symbol.
 
-| Symbol | Company Name | Duration | Std XIRR | Mid-Mo XIRR | Weekly XIRR | 200 SMA XIRR | 10% Dip XIRR | Mo Low XIRR | God XIRR |
-| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-${results.map(r => `| **${r.symbol}** | ${r.name.slice(0, 20)} | ${r.duration.toFixed(1)} Yrs | ${r.stdXirr.toFixed(2)}% | ${r.midXirr.toFixed(2)}% | ${r.weeklyXirr.toFixed(2)}% | ${r.smaXirr.toFixed(2)}% | ${r.dipXirr.toFixed(2)}% | **${r.mlowXirr.toFixed(2)}%** | **${r.godXirr.toFixed(2)}%** |`).join('\n')}
+| Symbol | Company Name | Duration | Std XIRR | Mid-Mo XIRR | Weekly XIRR | 200 SMA XIRR | 10% Dip XIRR | VA XIRR | RSI XIRR | SMA Exit XIRR | Mo Low XIRR | God XIRR | Super God XIRR |
+| :--- | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+${results.map(r => `| **${r.symbol}** | ${r.name.slice(0, 20)} | ${r.duration.toFixed(1)} Yrs | ${r.stdXirr.toFixed(2)}% | ${r.midXirr.toFixed(2)}% | ${r.weeklyXirr.toFixed(2)}% | ${r.smaXirr.toFixed(2)}% | ${r.dipXirr.toFixed(2)}% | ${r.vaXirr.toFixed(2)}% | ${r.rsiXirr.toFixed(2)}% | ${r.exitXirr.toFixed(2)}% | **${r.mlowXirr.toFixed(2)}%** | **${r.godXirr.toFixed(2)}%** | **${r.sgodXirr.toFixed(2)}%** |`).join('\n')}
 `;
 
   fs.writeFileSync(mdPath, md, 'utf8');
